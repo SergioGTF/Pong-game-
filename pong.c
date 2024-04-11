@@ -1,1009 +1,335 @@
 #include <stdio.h>
-#include <stdlib.h>
-#include <windows.h>
-#include <conio.h>
-#include <stdbool.h>
-#include <string.h>
-#include <time.h>
-#include <wchar.h>
+#include <allegro5/allegro.h>
+#include <allegro5/allegro_primitives.h>
+#include <allegro5/allegro_font.h>
 
-void linhaCol(int lin, int col);
-void box(int lin1, int col1, int lin2, int col2);
-int menu(int lin1, int col1, int qtd, char lista[5][40]);
-void textColor(int letras, int fundo);
+const int SCREEN_WIDTH = 640;
+const int SCREEN_HEIGHT = 480;
+const int PADDLE_WIDTH = 10;
+const int PADDLE_HEIGHT = 60;
+const int BALL_SIZE = 10;
 
-enum
-{
-    BLACK, BLUE, GREEN, CYAN, RED, MAGENTA, BROWN, LIGHTGRAY,
-    DARKGRAY, LIGHTBLUE, LIGHTGREEN, LIGHTCYAN, LIGHTRED, LIGHTMAGENTA, YELLOW, WHITE
+enum GameState {
+    MENU,
+    MODE_SELECTION,
+    PLAYING,
+    TUTORIAL,
+    EXIT
 };
 
-enum
-{
-    _BLACK = 0, _BLUE = 16, _GREEN = 32, _CYAN = 48, _RED = 64, _MAGENTA = 80, _BROWN = 96,
-    _LIGHTGRAY = 112, _DARKGRAY = 128, _LIGHTBLUE = 144, _LIGHTGREEN = 160, _LIGHTCYAN = 176,
-    _LIGHTRED = 192, _LIGHTMAGENTA = 208, _YELLOW = 224, _WHITE = 240
+enum GameMode {
+    PLAYER_VS_PLAYER,
+    PLAYER_VS_AI
 };
 
-
-void textColor(int letra, int fundo)
-{
-    SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), letra + fundo);
-
-    CONSOLE_FONT_INFOEX font;
-    font.cbSize = sizeof(font);
-    font.nFont = 0;
-    font.dwFontSize.X = 0;  // Largura da fonte (0 = mant�m o mesmo que o padr�o)
-    font.dwFontSize.Y = 27; // Altura da fonte (24 = tamanho maior)
-    font.FontFamily = FF_DONTCARE;
-    font.FontWeight = FW_NORMAL;
-    wcscpy(font.FaceName, L"Consolas");
-    SetCurrentConsoleFontEx(GetStdHandle(STD_OUTPUT_HANDLE), FALSE, &font);
+void close_game(bool* doexit, int* gameState) {
+    *doexit = true;
+    *gameState = EXIT;
 }
 
-void linhaCol(int lin, int col)
-{
-    SetConsoleCursorPosition(GetStdHandle(STD_OUTPUT_HANDLE), (COORD) { col - 1, lin - 1 });
-    HANDLE consoleHandle = GetStdHandle(STD_OUTPUT_HANDLE);
-    CONSOLE_CURSOR_INFO info;
-    info.dwSize = 100;
-    info.bVisible = FALSE;
-    SetConsoleCursorInfo(consoleHandle, &info);
-}
+int main() {
+    ALLEGRO_DISPLAY* display = NULL;
+    ALLEGRO_EVENT_QUEUE* event_queue = NULL;
+    ALLEGRO_TIMER* timer = NULL;
+    ALLEGRO_FONT* font = NULL;
 
-void box(int lin1, int col1, int lin2, int col2)
-{
-    int i, j, tamlin, tamcol;
-    tamlin = lin2 - lin1;
-    tamcol = col2 - col1;
+    bool key[ALLEGRO_KEY_MAX] = { false };
+    bool redraw = true;
+    bool doexit = false;
+    bool pause = false; // Variável para controlar a pausa
 
-    for (i = col1; i <= col2; i++)
-    {
-        linhaCol(lin1, i);
-        printf("%c", 196);
-        linhaCol(lin2, i);
-        printf("%c", 196);
+    float paddle1_y = SCREEN_HEIGHT / 2.0 - PADDLE_HEIGHT / 2.0;
+    float paddle2_y = SCREEN_HEIGHT / 2.0 - PADDLE_HEIGHT / 2.0;
+    float ball_x = SCREEN_WIDTH / 2.0 - BALL_SIZE / 2.0;
+    float ball_y = SCREEN_HEIGHT / 2.0 - BALL_SIZE / 2.0;
+    float ball_dx = -5.0, ball_dy = 5.0;
+
+    int player1_score = 0;
+    int player2_score = 0;
+
+    int gameState = MENU;
+    int gameMode = PLAYER_VS_PLAYER; // Modo padrão: jogador vs jogador
+
+    if (!al_init()) {
+        fprintf(stderr, "Falha ao inicializar a Allegro.\n");
+        return -1;
     }
 
-    for (i = lin1; i <= lin2; i++)
-    {
-        linhaCol(i, col1);
-        printf("%c", 179);
-        linhaCol(i, col2);
-        printf("%c", 179);
+    display = al_create_display(SCREEN_WIDTH, SCREEN_HEIGHT);
+    if (!display) {
+        fprintf(stderr, "Falha ao criar o display.\n");
+        return -1;
     }
 
-    for (i = lin1 + 1; i < lin2; i++)
-    {
-        for (j = col1 + 1; j < col2; j++)
-        {
-            linhaCol(i, j); printf(" ");
-        }
+    event_queue = al_create_event_queue();
+    if (!event_queue) {
+        fprintf(stderr, "Falha ao criar a fila de eventos.\n");
+        al_destroy_display(display);
+        return -1;
     }
 
-    linhaCol(lin1, col1);
-    printf("%c", 218);
-    linhaCol(lin1, col2);
-    printf("%c", 191);
-    linhaCol(lin2, col1);
-    printf("%c", 192);
-    linhaCol(lin2, col2);
-    printf("%c", 217);
-}
-
-void resetTextColor()
-{
-    SetConsoleTextAttribute(GetStdHandle(STD_OUTPUT_HANDLE), FOREGROUND_RED | FOREGROUND_GREEN | FOREGROUND_BLUE);
-
-    CONSOLE_FONT_INFOEX font;
-    font.cbSize = sizeof(font);
-    font.nFont = 0;
-    font.dwFontSize.X = 0;  // Largura da fonte 
-    font.dwFontSize.Y = 16; // Altura da fonte 
-    font.FontFamily = FF_DONTCARE;
-    font.FontWeight = FW_NORMAL;
-    wcscpy(font.FaceName, L"Consolas");
-    SetCurrentConsoleFontEx(GetStdHandle(STD_OUTPUT_HANDLE), FALSE, &font);
-}
-
-
-int menu(int lin1, int col1, int qtd, char lista[5][40])
-{
-    int opc = 1, lin2, col2, linha, i, tamMaxItem, tecla;
-
-    tamMaxItem = strlen(lista[0]);
-    for (i = 1; i < qtd; i++)
-    {
-        if (strlen(lista[i]) > tamMaxItem)
-        {
-            tamMaxItem = strlen(lista[i]);
-        }
-    }
-    lin2 = lin1 + (qtd * 2 + 2);
-    col2 = col1 + tamMaxItem + 4;
-
-    box(lin1, col1, lin2, col2);
-
-    while (1)
-    {
-        linha = lin1 + 2;
-        for (i = 0; i < qtd; i++)
-        {
-            if (i + 1 == opc)
-            {
-                textColor(RED, BLACK);
-            }
-            else
-            {
-                textColor(WHITE, BLACK);
-            }
-            linhaCol(linha, col1 + 2);
-            printf("%s", lista[i]);
-            linha += 2;
-        }
-
-        linhaCol(1, 1);
-        tecla = getch();
-        linhaCol(22, 1);
-        if (tecla == 27)
-        {
-            opc = 0; break;
-        }
-        else if (tecla == 13)
-        {
-            break;
-        }
-        else if (tecla == 72)
-        {
-            if (opc > 1)opc--;
-        }
-        else if (tecla == 80)
-        {
-            if (opc < qtd)opc++;
-        }
-    }
-    resetTextColor();
-    return opc;
-}
-
-struct personagem
-{
-
-    char nome[50];
-    float forca;
-    float agilidade;
-    float hp;
-
-}; typedef struct personagem personagem;
-
-struct inimigo
-{
-    char nome[50];
-    float agilidade;
-    float hp;
-    float forca;
-}; typedef struct inimigo inimigo;
-
-struct arma
-{
-    float dano;
-}; typedef struct arma arma;
-
-void delay(int seconds)
-{
-    int mil = 1000 * seconds;
-    clock_t stime = clock();
-    while (clock() < stime + mil);
-}
-
-
-void iniciarJogo()
-{
-    system("cls");
-    printf("\nJogando...\n\n");
-
-    int esc;
-
-
-    printf("\t\t\t\t\t================================\n");
-    printf("\t\t\t\t\t=        seja bem vindo        =\n");
-    printf("\t\t\t\t\t=              ao              =\n");
-    printf("\t\t\t\t\t=         serious game         =\n");
-    printf("\t\t\t\t\t================================\n");
-
-
-    // Solicita o nome do personagem ao jogador
-    char nome[50];
-    printf("Digite o nome do seu personagem: ");
-    fgets(nome, 50, stdin);
-    fflush(stdin);
-
-    // Exibe o nome informado pelo jogador
-    printf("\n\nSeu personagem se chama: %s\n\n", nome);
-
-    system("pause");
-    system("cls");
-
-    // In�cio da aventura
-    printf("Sua jornada comeca agora, %s!\n", nome);
-    printf("Prepare se para enfrentar desafios e descobrir segredos incriveis!\n\n");
-
-    printf("Escolha seu personagem:\n\n");
-
-    personagem jogador;
-    jogador.forca = 0;
-    jogador.agilidade = 0;
-    jogador.hp = 0;
-
-    personagem mago;
-    mago.forca = 5.0;
-    mago.agilidade = 7.0;
-    mago.hp = 35.0;
-
-    personagem cavaleiro;
-    cavaleiro.forca = 10.0;
-    cavaleiro.agilidade = 40.0;
-    cavaleiro.hp = 100.0;
-
-
-    personagem arqueiro;
-    arqueiro.forca = 10.0;
-    arqueiro.agilidade = 30.0;
-    arqueiro.hp = 50.0;
-
-    inimigo natasha;
-    natasha.forca = 10.0;
-    natasha.hp = 150.0;
-    natasha.agilidade = 4.0;
-    do
-    {
-        system("cls"); // Limpa a tela
-        printf("1- Mago:\n");
-        printf("\033[0;35m"); // Muda a cor para roxo
-        printf("           /:\\\n");
-        printf("          /;:.\\\n");
-        printf("         //;:. \\\n");
-        printf("        ///;:.. \\\n");
-        printf("  --\"////;:... \\\\\\--\n");
-        printf("--__   \"--_--\"   __--\n");
-        printf("    \"\"\"--_--\"\"\"\n\n\n");
-
-        printf("Forca do Mago: %.2f\n\nDestreza do Mago: %.1f\n\nhp do Mago: %.1f\n\n\n", mago.forca, mago.agilidade, mago.hp);
-        printf("\033[0m"); // Retorna a cor ao normal
-        printf("\n2- Cavaleiro:\n");
-        printf("\033[0;33m"); // Muda a cor para amarelo
-        printf("             />\n");
-        printf("            /<\n");
-        printf("           /<\n");
-        printf(" |\\{o}----------------------------------------------------------\n");
-        printf("[\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\{*}:::<=============================================->\n");
-        printf(" |/{o}----------------------------------------------------------\n");
-        printf("           \\<\n");
-        printf("            \\<\n");
-        printf("             \\>\n");
-        printf("\n\n");
-
-        printf("Forca do Cavaleiro: %.1f\n\nDestreza do Cavaleiro: %.1f\n\nSaude do Cavaleiro: %.1f\n\n\n", cavaleiro.forca, cavaleiro.agilidade, cavaleiro.hp);
-
-        printf("\033[0m"); // Retorna a cor ao normal
-
-        printf("Pressione 'P' 2 vezes para ver a proxima pagina ou pressione 'E' para escolher seu personagem.\n");
-        if (getch() == 'o')
-        {
-            system("cls");
-            printf("1- Mago:\n");
-            printf("\033[0;35m"); // Muda a cor para roxo
-            printf("           /:\\\n");
-            printf("          /;:.\\\n");
-            printf("         //;:. \\\n");
-            printf("        ///;:.. \\\n");
-            printf("  --\"////;:... \\\\\\--\n");
-            printf("--__   \"--_--\"   __--\n");
-            printf("    \"\"\"--_--\"\"\"\n\n\n");
-
-            printf("Forca do Mago: %.2f\n\nDestreza do Mago: %.1f\n\nhp do Mago: %.1f\n\n\n", mago.forca, mago.agilidade, mago.hp);
-            printf("\033[0m"); // Retorna a cor ao normal
-            printf("\n2- Cavaleiro:\n");
-            printf("\033[0;33m"); // Muda a cor para amarelo
-            printf("             />\n");
-            printf("            /<\n");
-            printf("           /<\n");
-            printf(" |\\{o}----------------------------------------------------------\n");
-            printf("[\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\{*}:::<=============================================->\n");
-            printf(" |/{o}----------------------------------------------------------\n");
-            printf("           \\<\n");
-            printf("            \\<\n");
-            printf("             \\>\n");
-            printf("\n\n");
-
-            printf("Forca do Cavaleiro: %.1f\n\nDestreza do Cavaleiro: %.1f\n\nSaude do Cavaleiro: %.1f\n\n\n", cavaleiro.forca, cavaleiro.agilidade, cavaleiro.hp);
-
-            printf("\033[0m"); // Retorna a cor ao normal
-
-            printf("Pressione 'P' 2 vezes para ver a proxima pagina ou pressione 'E' 3 vezes para escolher seu personagem.\n");
-        }
-        else if (getch() == 'p')
-        {
-            system("cls");
-            printf("\n3- Arqueiro:\n\n");
-            printf("\033[0;32m"); // muda a cor para verde
-
-            printf("          4$$-.                                          \n");
-            printf("           4   \".                                        \n");
-            printf("           4    ^\\                                        \n");
-            printf("           4     $                                        \n");
-            printf("           4     'b                                       \n");
-            printf("           4      \"b.                                     \n");
-            printf("           4        $                                     \n");
-            printf("           4        $r                                    \n");
-            printf("           4        $F                                    \n");
-            printf("-$b========4========$b====*P=-                           \n");
-            printf("           4       *$$F                                   \n");
-            printf("           4        $$\"                                   \n");
-            printf("           4       .$F                                    \n");
-            printf("           4       dP                                     \n");
-            printf("           4      F                                       \n");
-            printf("           4     @                                        \n");
-            printf("           4    .                                         \n");
-            printf("           J.                                             \n");
-            printf("          '$$                                             \n");
-
-
-            printf("Forca do Arqueiro: %.1f\n\nAgilidade do Arqueiro: %.1f\n\nSaude do Arqueiro: %.1f\n\n", arqueiro.forca, arqueiro.agilidade, arqueiro.hp);
-
-            printf("\033[0m"); // Retorna a cor ao normal
-
-            printf("Pressione 'O' 1 vez para voltar a pagina anterior ou pressione 'E' uma vez para escolher seu personagem.\n");
-        }
-    } while (getch() != 'e');
-    puts("Escolha sua caracteristica:");
-    scanf("%d", &esc);
-    printf("\n\n");
-    fflush(stdin);
-
-    float balanceamento1, balanceamento2, balanceamento3;
-
-    switch (esc)
-    {
-    case 1:
-        balanceamento1 = 20;
-        balanceamento2 = 10;
-        balanceamento3 = 5;
-        jogador.forca = mago.forca;
-        jogador.agilidade = mago.agilidade;
-        jogador.hp = mago.hp;
-        system("cls");
-        printf("Seja bem vindo(a) Mago(a) %s", nome);
-        system("pause");
-        system("cls");
-        break;
-
-    case 2:
-        balanceamento1 = 3;
-        balanceamento2 = 2;
-        balanceamento3 = 1;
-        jogador.forca = cavaleiro.forca;
-        jogador.agilidade = cavaleiro.agilidade;
-        jogador.hp = cavaleiro.hp;
-        system("cls");
-        printf("Seja bem vindo(a) Cavaleiro(a) %s", nome);
-        system("pause");
-        system("cls");
-        break;
-
-    case 3:
-        balanceamento1 = 7;
-        balanceamento2 = 4;
-        balanceamento3 = 2;
-        jogador.forca = arqueiro.forca;
-        jogador.agilidade = arqueiro.agilidade;
-        jogador.hp = arqueiro.hp;
-        system("cls");
-        printf("\nSeja bem vindo(a) Arqueiro(a) %s", nome);
-        system("pause");
-        system("cls");
-        break;
-
+    timer = al_create_timer(1.0 / 60.0);
+    if (!timer) {
+        fprintf(stderr, "Falha ao criar o temporizador.\n");
+        al_destroy_display(display);
+        al_destroy_event_queue(event_queue);
+        return -1;
     }
 
-    printf("\033[1;36m"); // introduzir cor
-
-    //Introdu��o
-    char texto[] = "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\t\t\t  * 8888888888            d8888          .d8888b.          8888888888                  d888 *\n"
-        "\t\t\t  * 888                  d88888         d88P  Y88b         888                        d8888 *\n"
-        "\t\t\t  * 888                 d88P888         Y88b.              888                          888 *\n"
-        "\t\t\t  * 8888888            d88P 888          \"Y888b.           8888888                      888 *\n"
-        "\t\t\t  * 888               d88P  888             \"Y88b.         888                          888 *\n"
-        "\t\t\t  * 888              d88P   888               \"888         888                          888 *\n"
-        "\t\t\t  * 888             d8888888888         Y88b  d88P         888                          888 *\n"
-        "\t\t\t  * 888            d88P     888          \"Y8888P\"          8888888888                 8888888 *\n\n";
-
-    for (int i = 0; texto[i] != '\0'; i++)
-    {
-        putchar(texto[i]);
-        fflush(stdout);
-        Sleep(1);
-        if (kbhit())
-        {
-            system("cls");
-            printf("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\t\t\t  * 8888888888            d8888          .d8888b.          8888888888                  d888 *\n"
-                "\t\t\t  * 888                  d88888         d88P  Y88b         888                        d8888 *\n"
-                "\t\t\t  * 888                 d88P888         Y88b.              888                          888 *\n"
-                "\t\t\t  * 8888888            d88P 888          \"Y888b.           8888888                      888 *\n"
-                "\t\t\t  * 888               d88P  888             \"Y88b.         888                          888 *\n"
-                "\t\t\t  * 888              d88P   888               \"888         888                          888 *\n"
-                "\t\t\t  * 888             d8888888888         Y88b  d88P         888                          888 *\n"
-                "\t\t\t  * 888            d88P     888          \"Y8888P\"          8888888888                 8888888 *\n\n");
-            break;
-        }
+    if (!al_init_font_addon()) {
+        fprintf(stderr, "Falha ao inicializar o addon de fonte.\n");
+        al_destroy_display(display);
+        al_destroy_event_queue(event_queue);
+        al_destroy_timer(timer);
+        return -1;
     }
-    printf("\n\t\t\t\t\t\t");
-    printf("\033[0m");
-    system("pause");
 
-    system("cls");
-
-    printf("Ola %sme chamo Girotto, irei ser seu treinador nesta primeira fase...\n\n", nome);
-    printf("Prologo:\n\n");
-    printf("Neste prologo sera apresentado uma estrutura basica de um programa em C...\n\n");
-
-    printf("\033[35m#include <stdio.h>\n\n");
-    printf("\033[0m\n");
-    printf("\033[34mint \033[0m main(){\n\n");
-    printf("\033[33m\033[34mreturn\033[0m \033[33m\033[1m0\033[0m;\n}\n");
-    printf("\n\n\033[31mObservacao: vamos usar a biblioteca stdio.h pois ela apresenta as funcoes basicas para o que iremos aprender no capitulo 1...");
-    printf("\033[0m\n\n");
-
-    system("pause");
-    system("cls");
-
-    printf("Capitulo 1:\n");
-    printf("Imprimindo dados na Tela:\n\n");
-    printf("Para imprimir algo do seu desejo na tela iremos usar uma funcao chamada (printf), sua estrutura segue abaixo:\n\n");
-    printf("\033[35m#include <stdio.h>\n\n");
-    printf("\033[0m\n");
-    printf("\033[34mint \033[0m main(){\n\n");
-    printf("\033[0mprintf\033[0;33m('');");
-    printf("\033[0m\n\n");
-    printf("\033[33m\033[34mreturn\033[0m \033[33m\033[1m0\033[0m;\n}\n");
-    printf("\033[31mObservacao: Dentro dos parenteses do printf devera ser acompanhado com aspas duplas, e dentro dos parenteses com as aspas voce pode digitar oq quiser...\n");
-    printf("\033[31mNUNCA ESQUECA DE BOTAR (;), no final\n\n");
-    printf("\033[0m\n\n");
-
-    system("pause");
-    system("cls");
-
-
-    //constru��o jogo c;
-
-    printf("Agora vamos comecar:\n\n");
-
-    int opc1;
-
-    printf("Um inimigo quer enfrentar voce:\n\n");
-    printf("Voce aceita o desafio:\n1- SIM.\n2- NAO.\n");
-    scanf("%d", &opc1);
-    printf("\n\n");
-
-    system("pause");
-    system("cls");
-
-    int escolha_ataque;
-    int resposta;
-
-    if (opc1 == 1)
-    {
-        printf("Batalha aceita...\n\n");
-        printf("\033[0;33mNome do inimigo: NATASHA.EXE\t\t\t\033[0;32mNome de seu personagem: %s\n"
-            "\033[0;33mForca da Natasha: %.1f\t\t\t\t\033[0;32mForca de Seu personagem: %.1f\n"
-            "\033[0;33mDestreza da Natasha: %.1f\t\t\t\033[0;32mDestreza de seu personagem: %.1f\n"
-            "\033[0;33mSaude da Natasha: %.1f\t\t\t\t\033[0;32mSaude de seu personagem: %.1f\n",
-            nome, natasha.forca,
-            jogador.forca, natasha.agilidade,
-            jogador.agilidade, natasha.hp,
-            jogador.hp);
-
-        printf("\033[0m");
+    font = al_create_builtin_font();
+    if (!font) {
+        fprintf(stderr, "Falha ao carregar a fonte.\n");
+        al_destroy_display(display);
+        al_destroy_event_queue(event_queue);
+        al_destroy_timer(timer);
+        return -1;
     }
-    do
-    {
 
-        printf("\n\nSua vez. Ataque:\n");
-        printf("\n\nEscolha seu ataque:\n\033[31m1- Ataque forte\n2- Ataque medio\n3- Ataque fraco\n.");
-        printf("\033[0m\n\n");
-        scanf("%d", &escolha_ataque);
-        fflush(stdin);
+    al_install_keyboard();
+    al_init_primitives_addon();
+    al_register_event_source(event_queue, al_get_display_event_source(display));
+    al_register_event_source(event_queue, al_get_timer_event_source(timer));
+    al_register_event_source(event_queue, al_get_keyboard_event_source());
 
-        system("pause");
-        system("cls");
+    al_clear_to_color(al_map_rgb(0, 0, 0));
+    al_flip_display();
+    al_start_timer(timer);
 
+    while (!doexit) {
+        ALLEGRO_EVENT ev;
+        al_wait_for_event(event_queue, &ev);
 
-        if (escolha_ataque == 1)
-        {
-            float ataque_forte = jogador.forca * balanceamento1;
+        if (ev.type == ALLEGRO_EVENT_TIMER) {
+            if (!pause && gameState == PLAYING) { // Verifica se o jogo não está pausado
+                // Lógica do jogo aqui
+                if (key[ALLEGRO_KEY_W]) {
+                    paddle1_y -= 10.0;
+                }
+                if (key[ALLEGRO_KEY_S]) {
+                    paddle1_y += 10.0;
+                }
+                if (gameMode == PLAYER_VS_PLAYER) {
+                    if (key[ALLEGRO_KEY_UP]) {
+                        paddle2_y -= 10.0;
+                    }
+                    if (key[ALLEGRO_KEY_DOWN]) {
+                        paddle2_y += 10.0;
+                    }
+                }
+                else if (gameMode == PLAYER_VS_AI) {
+                    // Ajuste da velocidade de reação da IA
+                    float ai_speed = 5.0;
 
-            printf("Voce escolheu o ataque forte..\n\n");
+                    // Refinamento da previsão da bola
+                    float future_ball_y = ball_y + ball_dy * ((SCREEN_WIDTH - PADDLE_WIDTH - ball_x) / ball_dx);
 
-            printf("\nEscolha a opcao correta onde o codigo imprima um hello world na tela:\n\n");
-            printf("\033[35m"); // Muda a cor para roxo
-            printf("\033[35m1- #include <stdio.h>\n\nint main(){\n\nprintf('hello world');\n\nreturn 0;\n\n}\n\n\n");
-            printf("\033[34m2- int main(){\n\nprintf('hello world);;\n\nreturn 0;\n\n}\n\n\n");
-            printf("\033[32m3- #include <stdio.h>\n\nint main(){\n\nprintf('hello world')\n\nreturn 0;\n\n}\n\n\n");
+                    // Implementação de estratégias de defesa e ataque
+                    float target_y;
+                    if (future_ball_y > paddle2_y + PADDLE_HEIGHT / 2) {
+                        target_y = paddle2_y + ai_speed; // Defesa
+                    }
+                    else if (future_ball_y < paddle2_y + PADDLE_HEIGHT / 2) {
+                        target_y = paddle2_y - ai_speed; // Defesa
+                    }
+                    else {
+                        target_y = paddle2_y; // Ataque
+                    }
 
-            printf("\033[0m"); // Retorna a cor ao normal
+                    // Introdução de aleatoriedade
+                    target_y += rand() % 21 - 10; // Adiciona uma variação aleatória de -10 a 10
 
-            printf("Responda: ");
-            scanf("%d", &resposta);
-            fflush(stdin);
+                    // Limita o movimento da raquete da IA dentro dos limites da tela
+                    if (target_y < 0) {
+                        target_y = 0;
+                    }
+                    else if (target_y + PADDLE_HEIGHT > SCREEN_HEIGHT) {
+                        target_y = SCREEN_HEIGHT - PADDLE_HEIGHT;
+                    }
 
-            if (resposta != 1)
-            {
-                printf("Resposta errada,..... nem uma ataque efetivo\n");
-                printf("\033[0;33mNome do inimigo: NATASHA.EXE\t\t\t\033[0;32mNome de seu personagem: %s\n"
-                    "\033[0;33mForca da Natasha: %.1f\t\t\t\t\033[0;32mForca de Seu personagem: %.1f\n"
-                    "\033[0;33mDestreza da Natasha: %.1f\t\t\t\033[0;32mDestreza de seu personagem: %.1f\n"
-                    "\033[0;33mSaude da Natasha: %.1f\t\t\t\t\033[0;32mSaude de seu personagem: %.1f\n",
-                    nome, natasha.forca,
-                    jogador.forca, natasha.agilidade,
-                    jogador.agilidade, natasha.hp,
-                    jogador.hp);
-                system("pause");
-
-
-                printf("Vez de NATASHA.EXE atacar:");
-                printf("Voce recebera , se prepare para esquivar...\n");//colocar para aparecer aos poucos/
-                printf("para voce consegui esquivar precisa sortear um valor a cima de (77%%)\n");
-                srand(time(NULL));
-                printf("Vez de Natasha.exe:\n");
-                printf("Voce esta prestes a receber um ataque, se prepare para desviar...\n");//colocar para aparecer aos poucos/
-                printf("Para voce conseguir desviar, voce precisa sortear um valor acima de 77!\n\n");
-                srand(time(NULL));
-
-                system("pause");
-                system("cls");
-
-                int numeroAleatorio = rand() % 100;
-                printf("numero sorteado %d\n", numeroAleatorio);
-
-                if (numeroAleatorio < 77)
-                {
-                    float ataquenatasha = jogador.hp - natasha.forca;
-
-                    printf("Que pena, NATASHA.exe te atacou...\n\n");
-
-                    printf("\033[0;33mNome do inimigo: NATASHA.EXE\t\t\t\033[0;32mNome de seu personagem: %s\n"
-                        "\033[0;33mForca da Natasha: %.1f\t\t\t\t\033[0;32mForca de Seu personagem: %.1f\n"
-                        "\033[0;33mDestreza da Natasha: %.1f\t\t\t\033[0;32mDestreza de seu personagem: %.1f\n"
-                        "\033[0;33mSaude da Natasha: %.1f\t\t\t\t\033[0;32mSaude de seu personagem: %.1f\n\n",
-                        nome, natasha.forca,
-                        jogador.forca, natasha.agilidade,
-                        jogador.agilidade, natasha.hp,
-                        ataquenatasha);
-                    continue;
+                    // Movimento suave da raquete da IA em direção à posição alvo
+                    if (paddle2_y < target_y) {
+                        paddle2_y += ai_speed; // Move para baixo
+                    }
+                    else if (paddle2_y > target_y) {
+                        paddle2_y -= ai_speed; // Move para cima
+                    }
                 }
 
-                else if (numeroAleatorio > 77)
-                {
-                    printf("UAU, que sorte... ataque novamente\n\n");
+                ball_x += ball_dx;
+                ball_y += ball_dy;
 
-                    printf("\033[0;33mNome do inimigo: NATASHA.EXE\t\t\t\033[0;32mNome de seu personagem: %s\n"
-                        "\033[0;33mForca da Natasha: %.1f\t\t\t\t\033[0;32mForca de Seu personagem: %.1f\n"
-                        "\033[0;33mDestreza da Natasha: %.1f\t\t\t\033[0;32mDestreza de seu personagem: %.1f\n"
-                        "\033[0;33mSaude da Natasha: %.1f\t\t\t\t\033[0;32mSaude de seu personagem: %.1f\n",
-                        nome, natasha.forca,
-                        jogador.forca, natasha.agilidade,
-                        jogador.agilidade, natasha.hp,
-                        jogador.hp);
+                // Verifica se a raquete atingiu o limite superior ou inferior do display
+                if (paddle1_y < 0) {
+                    paddle1_y = 0;
+                }
+                else if (paddle1_y + PADDLE_HEIGHT > SCREEN_HEIGHT) {
+                    paddle1_y = SCREEN_HEIGHT - PADDLE_HEIGHT;
+                }
 
-                    system("pause");
-                    system("cls");
-                    continue;
+                if (paddle2_y < 0) {
+                    paddle2_y = 0;
+                }
+                else if (paddle2_y + PADDLE_HEIGHT > SCREEN_HEIGHT) {
+                    paddle2_y = SCREEN_HEIGHT - PADDLE_HEIGHT;
+                }
+
+                // Colisão com as paredes
+                if (ball_y < 0 || ball_y > SCREEN_HEIGHT - BALL_SIZE) {
+                    ball_dy = -ball_dy;
+                }
+
+                // Colisão com as raquetes
+                if (ball_x <= PADDLE_WIDTH && ball_y >= paddle1_y && ball_y <= paddle1_y + PADDLE_HEIGHT) {
+                    ball_dx = -ball_dx;
+                }
+                if (ball_x >= SCREEN_WIDTH - PADDLE_WIDTH - BALL_SIZE && ball_y >= paddle2_y && ball_y <= paddle2_y + PADDLE_HEIGHT) {
+                    ball_dx = -ball_dx;
+                }
+                // Resetar a bola se sair pela esquerda ou direita
+                if (ball_x < 0) {
+                    ball_x = SCREEN_WIDTH / 2.0 - BALL_SIZE / 2.0;
+                    ball_y = SCREEN_HEIGHT / 2.0 - BALL_SIZE / 2.0;
+                    player2_score++;
+                }
+                if (ball_x > SCREEN_WIDTH - BALL_SIZE) {
+                    ball_x = SCREEN_WIDTH / 2.0 - BALL_SIZE / 2.0;
+                    ball_y = SCREEN_HEIGHT / 2.0 - BALL_SIZE / 2.0;
+                    player1_score++;
+                }
+            }
+            redraw = true;
+        }
+        else if (ev.type == ALLEGRO_EVENT_KEY_DOWN) {
+            switch (ev.keyboard.keycode) {
+            case ALLEGRO_KEY_W:
+                key[ALLEGRO_KEY_W] = true;
+                break;
+            case ALLEGRO_KEY_S:
+                key[ALLEGRO_KEY_S] = true;
+                break;
+            case ALLEGRO_KEY_UP:
+                key[ALLEGRO_KEY_UP] = true;
+                break;
+            case ALLEGRO_KEY_DOWN:
+                key[ALLEGRO_KEY_DOWN] = true;
+                break;
+            case ALLEGRO_KEY_P: // Tecla P para pausar o jogo
+                if (gameState == PLAYING) {
+                    pause = !pause; // Inverte o estado de pausa
+                }
+                break;
+            case ALLEGRO_KEY_1:
+                if (gameState == MENU) {
+                    gameState = MODE_SELECTION;
+                }
+                break;
+            case ALLEGRO_KEY_2:
+                if (gameState == MODE_SELECTION) {
+                    gameMode = PLAYER_VS_AI;
+                    gameState = PLAYING;
+                }
+                break;
+            case ALLEGRO_KEY_3:
+                if (gameState == MENU || gameState == MODE_SELECTION) {
+                    doexit = true; // Encerra o programa
+                }
+                break;
+            case ALLEGRO_KEY_4:
+                if (gameState == MENU) {
+                    gameState = TUTORIAL;
+                }
+                break;
+            case ALLEGRO_KEY_5:
+                if (gameState == MENU) {
+                    doexit = true; // Encerra o programa
+                }
+                break;
+            }
+        }
+        else if (ev.type == ALLEGRO_EVENT_KEY_UP) {
+            switch (ev.keyboard.keycode) {
+            case ALLEGRO_KEY_W:
+                key[ALLEGRO_KEY_W] = false;
+                break;
+            case ALLEGRO_KEY_S:
+                key[ALLEGRO_KEY_S] = false;
+                break;
+            case ALLEGRO_KEY_UP:
+                key[ALLEGRO_KEY_UP] = false;
+                break;
+            case ALLEGRO_KEY_DOWN:
+                key[ALLEGRO_KEY_DOWN] = false;
+                break;
+            }
+        }
+
+        else if (ev.type == ALLEGRO_EVENT_DISPLAY_CLOSE) {
+            doexit = true;
+        }
+
+        if (redraw && al_is_event_queue_empty(event_queue)) {
+            redraw = false;
+
+            al_clear_to_color(al_map_rgb(0, 0, 0));
+
+            // Desenha as raquetes e a bola
+            if (gameState == PLAYING) {
+                al_draw_filled_rectangle(0, paddle1_y, PADDLE_WIDTH, paddle1_y + PADDLE_HEIGHT, al_map_rgb(255, 255, 255));
+                al_draw_filled_rectangle(SCREEN_WIDTH - PADDLE_WIDTH, paddle2_y, SCREEN_WIDTH, paddle2_y + PADDLE_HEIGHT, al_map_rgb(255, 255, 255));
+                al_draw_filled_circle(ball_x, ball_y, BALL_SIZE / 2, al_map_rgb(255, 255, 255));
+
+                // Desenha a pontuação dos jogadores
+                char player1_score_str[15];
+                char player2_score_str[15];
+                snprintf(player1_score_str, sizeof(player1_score_str), "Player 1: %d", player1_score);
+                snprintf(player2_score_str, sizeof(player2_score_str), "Player 2: %d", player2_score);
+                al_draw_text(font, al_map_rgb(255, 255, 255), 10, 10, ALLEGRO_ALIGN_LEFT, player1_score_str);
+                al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_WIDTH - 10, 10, ALLEGRO_ALIGN_RIGHT, player2_score_str);
+
+                // Desenha mensagem de pausa se o jogo estiver pausado
+                if (pause) {
+                    al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, ALLEGRO_ALIGN_CENTER, "PAUSADO");
                 }
             }
 
-            else if (resposta == 1)
-            {
-                natasha.hp = natasha.hp - ataque_forte;
+            // Desenha o nome do jogo
+            al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_WIDTH / 2, 20, ALLEGRO_ALIGN_CENTER, "Pong's Game");
 
-                printf("Resposta certa.\n");
-                printf("Ataque efetivo.\n\n");
-                printf("Voce deu: %.1f de dano!\n", ataque_forte);
-                printf("HP Restante de NATASHA.exe: %.1f\n", natasha.hp);
-                system("pause");
-                printf("\033[0;33mNome do inimigo: NATASHA.EXE\t\t\t\033[0;32mNome de seu personagem: %s\n"
-                    "\033[0;33mForca da Natasha: %.1f\t\t\t\t\033[0;32mForca de Seu personagem: %.1f\n"
-                    "\033[0;33mDestreza da Natasha: %.1f\t\t\t\033[0;32mDestreza de seu personagem: %.1f\n"
-                    "\033[0;33mSaude da Natasha: %.1f\t\t\t\t\033[0;32mSaude de seu personagem: %.1f\n",
-                    nome, natasha.forca,
-                    jogador.forca, natasha.agilidade,
-                    jogador.agilidade, natasha.hp,
-                    jogador.hp);
-
-                system("pause");
-                system("cls");
-                printf("Vez de NATASHA.EXE atacar:");
-                printf("Voce recebera , se prepare para esquivar...\n");//colocar para aparecer aos poucos/
-                printf("para voce consegui esquivar precisa sortear um valor a cima de (77%%)\n");
-                srand(time(NULL));
-                printf("Vez de Natasha.exe:\n");
-                printf("Voce esta prestes a receber um ataque, se prepare para desviar...\n");//colocar para aparecer aos poucos/
-                printf("Para voce conseguir desviar, voce precisa sortear um valor acima de 77!\n\n");
-                srand(time(NULL));
-
-                system("pause");
-                system("cls");
-
-                int numeroAleatorio = rand() % 100;
-                printf("numero sorteado %d\n", numeroAleatorio);
-
-                if (numeroAleatorio < 77)
-                {
-                    float ataquenatasha = jogador.hp - natasha.forca;
-
-                    printf("Que pena, NATASHA.exe te atacou...\n\n");
-
-                    printf("\033[0;33mNome do inimigo: NATASHA.EXE\t\t\t\033[0;32mNome de seu personagem: %s\n"
-                        "\033[0;33mForca da Natasha: %.1f\t\t\t\t\033[0;32mForca de Seu personagem: %.1f\n"
-                        "\033[0;33mDestreza da Natasha: %.1f\t\t\t\033[0;32mDestreza de seu personagem: %.1f\n"
-                        "\033[0;33mSaude da Natasha: %.1f\t\t\t\t\033[0;32mSaude de seu personagem: %.1f\n\n",
-                        nome, natasha.forca,
-                        jogador.forca, natasha.agilidade,
-                        jogador.agilidade, natasha.hp,
-                        ataquenatasha);
-                    continue;
-                }
-
-                else if (numeroAleatorio > 77)
-                {
-                    printf("Uau! Que sorte!\n\n");
-
-                    printf("\033[0;33mNome do inimigo: NATASHA.EXE\t\t\t\033[0;32mNome de seu personagem: %s\n"
-                        "\033[0;33mForca da Natasha: %.1f\t\t\t\t\033[0;32mForca de Seu personagem: %.1f\n"
-                        "\033[0;33mDestreza da Natasha: %.1f\t\t\t\033[0;32mDestreza de seu personagem: %.1f\n"
-                        "\033[0;33mSaude da Natasha: %.1f\t\t\t\t\033[0;32mSaude de seu personagem: %.1f\n",
-                        nome, natasha.forca,
-                        jogador.forca, natasha.agilidade,
-                        jogador.agilidade, natasha.hp,
-                        jogador.hp);
-
-                    system("pause");
-                    system("cls");
-                    continue;
-                }
+            // Desenha o menu
+            if (gameState == MENU) {
+                al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 80, ALLEGRO_ALIGN_CENTER, "MENU");
+                al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 40, ALLEGRO_ALIGN_CENTER, "1. Selecionar Modo");
+                al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, ALLEGRO_ALIGN_CENTER, "2. Tutorial");
+                al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 40, ALLEGRO_ALIGN_CENTER, "3. Sair");
             }
-        }
-        /*se o jogador acertar entao na barra de dados dos persoangens da luta
-        ira desaperecer a vida anterior da inimida e ira aparecer aos poucos a nova vida dela apos o dano */
-
-        //colocar isso num while para sair ou retornar dependendo da resposta 
-
-        if (escolha_ataque == 2)
-        {
-            printf("Voce escolheu o ataque medio...\n\n");
-            printf("\nEscolha a opcao correta sobre estrututa basica em C:\n\n");
-            printf("\033[35m"); // Muda a cor para roxo
-            printf("\033[35m1- #include <stdio.h>\n\nint main(){\n\n\n\nreturn 0;\n\n}\n\n\n");
-            printf("\033[34m2- #include <studio.h>\n\nint main(){\n\n\n\nreturn 0;\n\n}\n\n\n");
-            printf("\033[32m3- #include <stdio.h\n\nint main(){\n\n\n\nreturn 0\n\n}\n\n\n");
-
-            printf("\033[0m"); // Retorna a cor ao normal
-
-            printf("Responda: ");
-            scanf("%d", &resposta);
-            fflush(stdin);
-
-
-
-            if (resposta == 1)
-            {
-                float ataque_medio = jogador.forca * balanceamento2;
-
-                natasha.hp = natasha.hp - ataque_medio;
-
-                int valor_aleatorio = 0;
-                printf("Resposta certa, ataque medio efetuado");
-                printf("Voce deu: %.1f de dano!\n", ataque_medio);
-                printf("HP Restante de NATASHA.exe: %.1f\n", natasha.hp);
-
-
-                printf("\033[0;33mNome do inimigo: NATASHA.EXE\t\t\t\033[0;32mNome de seu personagem: %s\n"
-                    "\033[0;33mForca da Natasha: %.1f\t\t\t\t\033[0;32mForca de Seu personagem: %.1f\n"
-                    "\033[0;33mDestreza da Natasha: %.1f\t\t\t\033[0;32mDestreza de seu personagem: %.1f\n"
-                    "\033[0;33mSaude da Natasha: %.1f\t\t\t\t\033[0;32mSaude de seu personagem: %.1f\n",
-                    nome, natasha.forca,
-                    jogador.forca, natasha.agilidade,
-                    jogador.agilidade, natasha.hp,
-                    jogador.hp);
-                system("pause");
-                system("cls");
-
-                printf("Voce esta quase vencendo....\n");
-                printf("Vez de Natasha.exe:\n");
-                printf("Voce esta prestes a receber um ataque, se prepare para desviar...\n");//colocar para aparecer aos poucos/
-                printf("Para voce conseguir desviar, voce precisa sortear um valor acima de 77!\n\n");
-                srand(time(NULL));
-
-                system("pause");
-                system("cls");
-
-                int numeroAleatorio = rand() % 100;
-                printf("Numero sorteado: %d\n", numeroAleatorio);
-
-                if (numeroAleatorio < 77)
-                {
-                    float ataquenatasha = jogador.hp - natasha.forca;
-
-                    printf("Que pena, NATASHA.exe te atacou...\n\n");
-
-                    printf("\033[0;33mNome do inimigo: NATASHA.EXE\t\t\t\033[0;32mNome de seu personagem: %s\n"
-                        "\033[0;33mForca da Natasha: %.1f\t\t\t\t\033[0;32mForca de Seu personagem: %.1f\n"
-                        "\033[0;33mDestreza da Natasha: %.1f\t\t\t\033[0;32mDestreza de seu personagem: %.1f\n"
-                        "\033[0;33mSaude da Natasha: %.1f\t\t\t\t\033[0;32mSaude de seu personagem: %.1f\n\n",
-                        nome, natasha.forca,
-                        jogador.forca, natasha.agilidade,
-                        jogador.agilidade, natasha.hp,
-                        ataquenatasha);
-                    system("pause");
-                    system("cls");
-                    continue;
-                }
-
-                else if (numeroAleatorio > 77)
-                {
-                    printf("UAU, que sorte... ataque novamente\n\n");
-
-                    printf("\033[0;33mNome do inimigo: NATASHA.EXE\t\t\t\033[0;32mNome de seu personagem: %s\n"
-                        "\033[0;33mForca da Natasha: %.1f\t\t\t\t\033[0;32mForca de Seu personagem: %.1f\n"
-                        "\033[0;33mDestreza da Natasha: %.1f\t\t\t\033[0;32mDestreza de seu personagem: %.1f\n"
-                        "\033[0;33mSaude da Natasha: %.1f\t\t\t\t\033[0;32mSaude de seu personagem: %.1f\n",
-                        nome, natasha.forca,
-                        jogador.forca, natasha.agilidade,
-                        jogador.agilidade, natasha.hp,
-                        jogador.hp);
-
-                    system("pause");
-                    system("cls");
-                    continue;
-                }
+            // Desenha o menu de seleção de modo
+            else if (gameState == MODE_SELECTION) {
+                al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 40, ALLEGRO_ALIGN_CENTER, "SELECIONAR MODO");
+                al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2, ALLEGRO_ALIGN_CENTER, "2. Jogar contra IA");
+                al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 + 40, ALLEGRO_ALIGN_CENTER, "3. Jogar contra outro jogador");
             }
 
-            if (resposta != 1)
-            {
-                printf("Resposta errada... Seu ataque falhou!\n");
-                printf("\033[0;33mNome do inimigo: NATASHA.EXE\t\t\t\033[0;32mNome de seu personagem: %s\n"
-                    "\033[0;33mForca da Natasha: %.1f\t\t\t\t\033[0;32mForca de Seu personagem: %.1f\n"
-                    "\033[0;33mDestreza da Natasha: %.1f\t\t\t\033[0;32mDestreza de seu personagem: %.1f\n"
-                    "\033[0;33mSaude da Natasha: %.1f\t\t\t\t\033[0;32mSaude de seu personagem: %.1f\n",
-                    nome, natasha.forca,
-                    jogador.forca, natasha.agilidade,
-                    jogador.agilidade, natasha.hp,
-                    jogador.hp);
-                system("pause");
-                system("cls");
-
-                printf("Vez de Natasha.exe:\n");
-                printf("Voce esta prestes a receber um ataque, se prepare para desviar...\n");//colocar para aparecer aos poucos/
-                printf("Para voce conseguir desviar, voce precisa sortear um valor acima de 77!\n\n");
-                srand(time(NULL));
-                int numeroAleatorio = rand() % 100;
-                printf("Numero sorteado: %d\n", numeroAleatorio);
-
-                if (numeroAleatorio < 77)
-                {
-                    float ataquenatasha = jogador.hp - natasha.forca;
-
-                    printf("Que pena, NATASHA.exe te atacou...\n\n");
-
-                    printf("\033[0;33mNome do inimigo: NATASHA.EXE\t\t\t\033[0;32mNome de seu personagem: %s\n"
-                        "\033[0;33mForca da Natasha: %.1f\t\t\t\t\033[0;32mForca de Seu personagem: %.1f\n"
-                        "\033[0;33mDestreza da Natasha: %.1f\t\t\t\033[0;32mDestreza de seu personagem: %.1f\n"
-                        "\033[0;33mSaude da Natasha: %.1f\t\t\t\t\033[0;32mSaude de seu personagem: %.1f\n\n",
-                        nome, natasha.forca,
-                        jogador.forca, natasha.agilidade,
-                        jogador.agilidade, natasha.hp,
-                        ataquenatasha);
-                    system("pause");
-                    system("cls");
-                    continue;
-                }
-
-                else if (numeroAleatorio > 77)
-                {
-                    printf("UAU, que sorte... ataque novamente\n\n");
-
-                    printf("\033[0;33mNome do inimigo: NATASHA.EXE\t\t\t\033[0;32mNome de seu personagem: %s\n"
-                        "\033[0;33mForca da Natasha: %.1f\t\t\t\t\033[0;32mForca de Seu personagem: %.1f\n"
-                        "\033[0;33mDestreza da Natasha: %.1f\t\t\t\033[0;32mDestreza de seu personagem: %.1f\n"
-                        "\033[0;33mSaude da Natasha: %.1f\t\t\t\t\033[0;32mSaude de seu personagem: %.1f\n",
-                        nome, natasha.forca,
-                        jogador.forca, natasha.agilidade,
-                        jogador.agilidade, natasha.hp,
-                        jogador.hp);
-
-                    system("pause");
-                    system("cls");
-                    continue;
-                }
+            // Desenha o tutorial
+            else if (gameState == TUTORIAL) {
+                al_draw_text(font, al_map_rgb(255, 255, 255), SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2 - 40, ALLEGRO_ALIGN_CENTER, "TUTORIAL");
+                // Adicione instruções de jogo aqui
             }
-        }
-        /*se o jogador acertar entao na barra de dados dos persoangens da luta
-        ira desaperecer a vida anterior da inimida e ira aparecer aos poucos a nova vida dela apos o dano */
-
-        if (escolha_ataque == 3)
-        {
-            int resposta_ataquef = 0;
-            printf("Voce escolheu o ataque fraco...");
-            printf("responda uma pergunta basica sobre a funcao de printar na tela\n");
-            printf("complete a escrita dessa funcao");
-            printf("prin_");
-            printf("opcao 1- print();\nopcao 2- printf('');\n opcao 3- print'', \n");
-            scanf("%d", resposta_ataquef);
-            continue;
-        }
-        /*se o jogador acertar entao na barra de dados dos persoangens da luta
-        ira desaperecer a vida anterior da inimida e ira aparecer aos poucos a nova vida dela apos o dano */
-
-
-        else if (opc1 == 2)
-        {
-            printf("Continuando...\n\n");
-            delay(2);
-            break;
-        }
-
-        else
-        {
-            printf("Opcao invalida. Por favor, escolha 1 para SIM ou 2 para NAO.\n\n");
-        }
-    } while (natasha.hp > 0);
-
-
-
-    char texto1[] = "\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\t\t\t   _____      _         ____       _____        ____  \n"
-        "\t\t\t  |  __|    / \\       / ___|     | ____|      |__ \\ \n"
-        "\t\t\t  | |_      / _ \\      \\___ \\     |  _|          __) |\n"
-        "\t\t\t  |  |    / ___ \\      ___) |    | |__        / __/ \n"
-        "\t\t\t  ||     //   \\\\    |/     ||      |_| \n\n";
-
-    for (int i = 0; texto1[i] != '\0'; i++)
-    {
-        putchar(texto1[i]);
-        fflush(stdout);
-        Sleep(1);
-        if (kbhit())
-        {
-            system("cls");
-            printf("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\t\t\t   _____      _         ____       _____        ____  \n"
-                "\t\t\t  |  __|    / \\       / ___|     | ____|      |__ \\ \n"
-                "\t\t\t  | |_      / _ \\      \\___ \\     |  _|          __) |\n"
-                "\t\t\t  |  |    / ___ \\      ___) |    | |__        / __/ \n"
-                "\t\t\t  ||     //   \\\\    |/     ||      |_| \n\n");
-            break;
-        }
-    }
-}
-
-// Restante do c�digo
-
-int main()
-{
-    int i;
-    int b;
-    b = i + 1;
-
-    for (i = 0; i < b; i++)
-    {
-        b++;
-        delay(1.1);
-        system("cls");
-        delay(1);
-        printf("\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\n\t\t\t\t\t\t\t\t\t\t  ==================================================================\n");
-        printf("\t\t\t\t\t\t\t\t\t\t  =                                                                =\n");
-        printf("\t\t\t\t\t\t\t\t\t\t  = ____            _                    ____                      =\n");
-        printf("\t\t\t\t\t\t\t\t\t\t  =/ __|  ___ _ __() ___  _   _ ___   / ___| __ _ _ __ ___   ___ =\n");
-        printf("\t\t\t\t\t\t\t\t\t\t  =\\___ \\ / _ \\ '| |/ _ \\| | | / _| | |  _ / _` | ' ` _ \\ / _ \\=\n");
-        printf("\t\t\t\t\t\t\t\t\t\t  = __) |  __/ |  | | () | || \\_ \\ | || | (| | | | | | |  __/=\n");
-        printf("\t\t\t\t\t\t\t\t\t\t  =|/ \\||  ||\\/ \\,|/  \\|\\,|| || ||\\_|=\n");
-        printf("\t\t\t\t\t\t\t\t\t\t  =                                                                =\n");
-        printf("\t\t\t\t\t\t\t\t\t\t  ==================================================================\n\n\n\n\n\n\n\n\n\n\n");
-        printf("\t\t\t\t\t\t\t\t\t\t\t\t    Pressione espaco para comecar!\n", i + 1);
-        if (kbhit())
-        {
-            break;
+            al_flip_display();
         }
     }
 
-    system("cls");
+    al_destroy_font(font);
+    al_destroy_display(display);
+    al_destroy_event_queue(event_queue);
+    al_destroy_timer(timer);
 
-    int opc;
-    char lista[5][40] = { "Jogar", "Tutorial", "Historia", "Desenvolvedores", "exit" };
-    while (true)
-    {
-        opc = menu(10, 10, 5, lista);
-        if (opc == 0)
-        {
-            break;
-        }
-        switch (opc)
-        {
-
-
-
-
-        case 1:
-
-            iniciarJogo();
-
-            system("pause");
-            system("cls");
-            break;
-
-        case 2:
-            system("cls");
-            printf("\nVisualizando tutorial...\n\n");
-
-            printf("Para imprimir algo do seu desejo na tela iremos usar uma funcao chamada (printf), sua estrutura segue abaixo:\n\n");
-            printf("#include <stdio.h>\n\n");
-            printf("int main(){\n");
-            printf("\nprintf("");\n");
-            printf("\nreturn 0;\n}\n\n");
-            printf("Observacao: Dentro dos parenteses do printf devera ser acompanhado com aspas duplas, e dentro dos parenteses com as aspas voce pode digitar oq quiser...\n");
-            printf("\n\nNUNCA ESQUECA DE BOTAR (;), no final\n\n");
-            system("pause");
-            system("cls");
-            break;
-
-        case 3:
-            system("cls");
-            printf("Voce e um Engenheiro da computacao, e esta em um mundo de cheio hackers e misterios.\n");
-            printf("Sua jornada comeca em uma pequena vila chamada Villageburg.\n");
-            printf("Voce e um heroi destinado a salvar o mundo das trevas que o ameacam.\n\n");
-
-            printf("Ao explorar Villageburg, voce descobre que a vila esta sofrendo com um terrivel malwere.\n");
-            printf("Os habitantes estao desaparecendo misteriosamente durante a noite, e uma aura de medo paira sobre o lugar.\n");
-            printf("Determinado a ajudar, voce decide investigar a origem desse malwere e encontrar uma maneira de quebra-lo.\n\n");
-
-            printf("Enquanto investiga, voce encontra pistas que levam a uma antiga masmorra nas proximidades, conhecida como a Caverna dos Espiritos.\n");
-            printf("Diz a lenda que a caverna eh habitada por hackers malignos que sao responsaveis pelo malwere que assola Villageburg.\n");
-            printf("Determinado a enfrentar esse desafio, voce se prepara para entrar na caverna e enfrentar os perigos que a aguardam.\n\n");
-
-            printf("Dentro da caverna, voce enfrenta hackers sombrios e virus.exe mortais, mas sua coragem e determinacao o mantem firme.\n");
-            printf("Finalmente, voce chega a camara central, onde encontra o lider dos hackers, um ser poderoso e sinistro.\n");
-            printf("Uma batalha epica se inicia, e voce luta com todas as suas forcas para derrotar o mal que ameaca Villageburg.\n\n");
-
-            printf("Com um golpe final, voce derrota o lider dos hackers e quebra o malwere que assolava a vila.\n");
-            printf("Os habitantes de Villageburg estao livres do medo e da escuridao, e eles o aclamam como seu salvador e heroi.\n");
-            printf("Sua jornada esta apenas comecando, e muitas aventuras e desafios ainda aguardam voce neste mundo magico e cheio de misterios.\n");
-
-            system("pause");
-            system("cls");
-            break;
-
-        case 4:
-            system("cls");
-            printf("Desenvolvedores: \n\n");
-            printf("\t\t\t\t\t================================\n");
-            printf("\t\t\t\t\t=     Ramon Silva de souza     =\n");
-            printf("\t\t\t\t\t=             and              =\n");
-            printf("\t\t\t\t\t=       Joao Pedro Silva       =\n");
-            printf("\t\t\t\t\t=             and              =\n");
-            printf("\t\t\t\t\t=       Joao Pedro Maues       =\n");
-            printf("\t\t\t\t\t================================\n");
-
-            system("pause");
-            system("cls");
-            break;
-
-        case 5:
-            system("cls");
-            printf("\nSaindo...");
-            return 0;
-        default:
-            printf("\nSaindo...");
-        }
-    }
-    textColor(WHITE, _BLACK);
-    linhaCol(24, 1);
-    printf("");
     return 0;
 }
